@@ -114,7 +114,18 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
 print("Bot is running...")
+    def main():
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
+
+    print("Bot is running...")
     app.run_polling()
+
+
+if name == "main":
+    main()
 
 # ================= ENTRY POINT =================
 if name == "main":
