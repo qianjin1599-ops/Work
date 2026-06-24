@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import logging
 from datetime import datetime, timedelta
 
@@ -11,8 +10,12 @@ logging.basicConfig(level=logging.INFO)
 
 # ================= TOKEN =================
 TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("BOT_TOKEN is not set!")
+
+# 👇 ADD ADMIN CODE HERE (THIS IS THE RIGHT PLACE)
+ADMIN_ID = 8869605526
+
+def is_admin(user_id):
+    return user_id == ADMIN_ID
 
 # ================= DATABASE =================
 conn = sqlite3.connect("attendance.db", check_same_thread=False)
