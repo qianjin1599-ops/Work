@@ -105,13 +105,19 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= MAIN =================
 def main():
+    from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+
+def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
 
-    print("🤖 Bot is running...")
+    print("Bot is running...")
     app.run_polling()
+
+if name == "main":
+    main()
 
 if __name__ == "__main__":
     main()
