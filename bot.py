@@ -69,29 +69,54 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_data:
         user_data[user_id] = {
             "state": "idle",
-            "break": None
+            "break": None,
+            "started": False
         }
 
     data = user_data[user_id]
     state = data["state"]
 
     hour = now.hour
-    shift_active = (hour >= SHIFT_START or hour < SHIFT_END)
+    shift_active = (hour >= 19 or hour < 8)
 
-    text = "⚠️ Action recorded"
-
-    # ================= SHIFT CHECK =================
-    if q.data == "start" and not shift_active:
-        await q.message.reply_text("❌ Shift not active (7PM–8AM)")
-        return
+    text = ""
 
     # ================= START WORK =================
     if q.data == "start":
+
+        if not shift_active:
+            await q.message.reply_text("❌ Shift not active (7PM–8AM)")
+            return
+
+        if state == "working":
+            await q.message.reply_text("❌ Already working")
+            return
+
         data["state"] = "working"
+        data["started"] = True
+
         text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
 
-    # ================= BREAK START =================
+    # ================= OFF WORK (LOCKED UNTIL STARTED) =================
+    elif q.data == "off":
+
+        if not data["started"]:
+            await q.message.reply_text("❌ You must start work first!")
+            return
+
+        if state == "break":
+            await q.message.reply_text("❌ Finish break first!")
+            return
+
+        data["state"] = "idle"
+        data["started"] = False
+        data["break"] = None
+
+        text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
+
+    # ================= BREAKS =================
     elif q.data in ["smoke", "wash", "prayer", "lunch"]:
+
         if state != "working":
             await q.message.reply_text("❌ Start work first!")
             return
@@ -101,47 +126,49 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = f"🚀 {name} started {q.data} break"
 
-    # ================= BACK =================
+    # ================= BACK TO SEAT =================
     elif q.data == "back":
+
+        if state != "break":
+            await q.message.reply_text("❌ You are not on break!")
+            return
+
         fines = 0
+        btype, start = data["break"]
 
-        if data.get("break"):
-            btype, start = data["break"]
+        limits = {
+            "smoke": 10,
+            "wash": 10,
+            "prayer": 15,
+            "lunch": 180
+        }
 
-            limits = {
-                "smoke": 10,
-                "wash": 10,
-                "prayer": 15,
-                "lunch": 180
-            }
-
-            limit = limits[btype]
-
-            if (now - start).total_seconds() / 60 > limit:
-                fines += 1000
-
-            data["break"] = None
+        if (now - start).total_seconds() / 60 > limits[btype]:
+            fines = 1000
 
         data["state"] = "working"
+        data["break"] = None
 
         text = f"🔙 {name} Back to Seat"
 
         if fines:
-            text += f"\n⚠️ Fine Applied: {fines} PKR"
+            text += f"\n⚠️ Fine: {fines} PKR"
 
-    # ================= OFF =================
-    elif q.data == "off":
-        data["state"] = "idle"
-        data["break"] = None
-        text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
-        # ================= INVALID ACTION LOCK =================
+    # ================= BLOCK INVALID ACTIONS =================
     else:
-        if state == "break":
-            await q.message.reply_text("❌ You must finish break first!")
-            return
+
         if state == "idle":
-            await q.message.reply_text("❌ You must start work first!")
+            await q.message.reply_text("❌ Start work first!")
             return
+
+        if state == "break":
+            await q.message.reply_text("❌ Finish break first!")
+            return
+
+    if not text:
+        text = "⚠️ Done"
+
+    await q.message.reply_text(text, reply_markup=menu())
 
     # ================= SAFE SEND =================
     if not text:
