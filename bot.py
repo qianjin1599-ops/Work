@@ -1,37 +1,3 @@
-import logging
-import os
-from datetime import datetime, timedelta
-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-
-logging.basicConfig(level=logging.INFO)
-
-TOKEN = os.getenv("BOT_TOKEN")
-
-if not TOKEN:
-    raise ValueError("BOT_TOKEN is not set!")
-
-user_data = {}
-
-# START
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("🟢 Start Work", callback_data="start_work")],
-        [InlineKeyboardButton("🍔 Lunch", callback_data="lunch")],
-        [InlineKeyboardButton("🚽 Washroom", callback_data="washroom")],
-        [InlineKeyboardButton("☕️ Smoke", callback_data="smoke")],
-        [InlineKeyboardButton("🙏 Prayer", callback_data="prayer")],
-        [InlineKeyboardButton("💺 Back", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off", callback_data="off")]
-    ]
-
-    await update.message.reply_text(
-        "👨‍💼 Bot Started",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-# BUTTONS
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -44,30 +10,32 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data[user_id] = {}
 
     data = user_data[user_id]
+
     text = ""
 
+    # ================= ACTIONS =================
     if query.data == "start_work":
         data["start"] = now
-        text = f"🟢 {name} Started Work"
+        text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
 
     elif query.data == "lunch":
         data["lunch_limit"] = now + timedelta(hours=3)
-        text = f"🍔 {name} Lunch Started"
+        text = f"🍔 {name} Lunch Started (3 hours limit)"
 
     elif query.data == "washroom":
         data["wash_limit"] = now + timedelta(minutes=10)
-        text = f"🚽 {name} Washroom Started"
+        text = f"🚽 {name} Washroom Started (10 min limit)"
 
     elif query.data == "smoke":
         data["smoke_limit"] = now + timedelta(minutes=10)
-        text = f"☕️ {name} Smoke Started"
+        text = f"☕️ {name} Smoke Started (10 min limit)"
 
     elif query.data == "prayer":
         data["prayer_limit"] = now + timedelta(minutes=15)
-        text = f"🙏 {name} Prayer Started"
+        text = f"🙏 {name} Prayer Started (15 min limit)"
 
     elif query.data == "off":
-        text = f"🔴 {name} Ended Work"
+        text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
 
     elif query.data == "back":
         fines = 0
@@ -86,6 +54,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if fines > 0:
             text += f"\n⚠️ Fine: {fines} PKR"
 
+    # ================= MENU BUTTON =================
+    elif query.data == "menu":
+        text = "👨‍💼 Main Menu"
+
+    # ================= KEYBOARD =================
     keyboard = [
         [InlineKeyboardButton("🟢 Start Work", callback_data="start_work")],
         [InlineKeyboardButton("🍔 Lunch", callback_data="lunch")],
@@ -93,23 +66,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("☕️ Smoke", callback_data="smoke")],
         [InlineKeyboardButton("🙏 Prayer", callback_data="prayer")],
         [InlineKeyboardButton("💺 Back", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off", callback_data="off")]
+        [InlineKeyboardButton("🔴 Off", callback_data="off")],
+        [InlineKeyboardButton("🏠 Menu", callback_data="menu")]
     ]
 
-    await context.bot.send_message(
-    chat_id=update.effective_chat.id,
-    text=text
-)
-
-def main():
-    app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-
-    print("Bot is running...")
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+    await query.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
