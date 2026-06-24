@@ -115,7 +115,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await query.message.reply_text(f"❌ Error: {str(e)}", reply_markup=get_menu())
-       # ================= MAIN =================
+# ================= MAIN =================
 def main():
     app = Application.builder().token(TOKEN).build()
 
