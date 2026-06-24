@@ -3,7 +3,14 @@ import logging
 from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
@@ -11,54 +18,62 @@ logging.basicConfig(level=logging.INFO)
 # ================= TOKEN =================
 TOKEN = os.getenv("BOT_TOKEN")
 
-# 👇 ADD ADMIN CODE HERE (THIS IS THE RIGHT PLACE)
-ADMIN_ID = 8869605526
+if not TOKEN:
+    raise ValueError("BOT_TOKEN is not set!")
+
+# ================= ADMIN =================
+ADMIN_ID = 1234567890  # 🔥 REPLACE WITH YOUR REAL TELEGRAM ID
 
 def is_admin(user_id):
     return user_id == ADMIN_ID
 
-# ================= DATABASE =================
-conn = sqlite3.connect("attendance.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT,
-    name TEXT,
-    action TEXT,
-    start_time TEXT,
-    end_time TEXT,
-    fine INTEGER,
-    date TEXT
-)
-""")
-conn.commit()
-
 # ================= MEMORY =================
 user_data = {}
 
-SHIFT_START = 19   # 7 PM
-SHIFT_END = 8      # 8 AM
+# 🔥 GROUP ID (replace with your group id)
+GROUP_ID = -1001234567890
+
 
 # ================= MENU =================
-def menu():
-    return InlineKeyboardMarkup([
+def menu(user_id):
+    buttons = [
         [InlineKeyboardButton("🟢 Start Work", callback_data="start")],
-        [InlineKeyboardButton("🚬 Smoke", callback_data="smoke")],
-        [InlineKeyboardButton("🚻 Washroom", callback_data="wash")],
-        [InlineKeyboardButton("🕌 Prayer", callback_data="prayer")],
-        [InlineKeyboardButton("🍽 Lunch", callback_data="lunch")],
-        [InlineKeyboardButton("🔙 Back", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off", callback_data="off")]
-    ])
+        [InlineKeyboardButton("🚬 Smoke Break", callback_data="smoke")],
+        [InlineKeyboardButton("🚻 Washroom Break", callback_data="wash")],
+        [InlineKeyboardButton("🕌 Prayer Break", callback_data="prayer")],
+        [InlineKeyboardButton("🍽 Lunch Break", callback_data="lunch")],
+        [InlineKeyboardButton("🔙 Back to Seat", callback_data="back")],
+        [InlineKeyboardButton("🔴 Off Work", callback_data="off")],
+    ]
+
+    if is_admin(user_id):
+        buttons.append([InlineKeyboardButton("📊 Admin Report", callback_data="report")])
+
+    return InlineKeyboardMarkup(buttons)
+
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👨‍💼 Attendance Bot Active",
-        reply_markup=menu()
+        "👨‍💼 Attendance Bot Started",
+        reply_markup=menu(update.effective_user.id),
     )
+
+
+# ================= DAILY REPORT =================
+async def send_daily_report(app):
+    logging.info("Sending daily report...")
+
+    text = "📊 DAILY ATTENDANCE REPORT\n\n"
+
+    if not user_data:
+        text += "No activity today."
+    else:
+        for uid, data in user_data.items():
+            text += f"User: {uid}\nData: {data}\n\n"
+
+    await app.bot.send_message(chat_id=GROUP_ID, text=text)
+
 
 # ================= BUTTON HANDLER =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -73,30 +88,29 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data[user_id] = {
             "state": "idle",
             "started": False,
-            "break": None
+            "break": None,
         }
 
     data = user_data[user_id]
     state = data["state"]
 
-    hour = now.hour
-    shift_active = (hour >= 19 or hour < 8)
+    shift_active = now.hour >= 19 or now.hour < 8
 
     text = ""
 
-    # ================= START WORK (ONLY SHIFT CHECK) =================
+    # ================= START =================
     if q.data == "start":
 
         if not shift_active:
-            await q.message.reply_text("❌ Shift not active (7PM–8AM)")
+            await q.message.reply_text("❌ Shift is 7PM - 8AM only")
             return
 
         data["state"] = "working"
         data["started"] = True
 
-        text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
+        text = f"🟢 {name} Started Work at {now.strftime('%H:%M')}"
 
-    # ================= OFF WORK (ONLY AFTER START) =================
+    # ================= OFF =================
     elif q.data == "off":
 
         if not data["started"]:
@@ -107,7 +121,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["started"] = False
         data["break"] = None
 
-        text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
+        text = f"🔴 {name} Ended Work at {now.strftime('%H:%M')}"
 
     # ================= BREAK START =================
     elif q.data in ["smoke", "wash", "prayer", "lunch"]:
@@ -116,7 +130,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.reply_text("❌ Start work first!")
             return
 
-        if data.get("break"):
+        if data["break"]:
             await q.message.reply_text("❌ Finish current break first!")
             return
 
@@ -125,132 +139,49 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = f"🚀 {name} started {q.data} break"
 
-    # ================= BACK TO SEAT =================
-    async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-
-    user_id = str(q.from_user.id)
-    name = q.from_user.first_name
-    now = datetime.now()
-
-    if user_id not in user_data:
-        user_data[user_id] = {
-            "state": "idle",
-            "started": False,
-            "break": None
-        }
-
-    data = user_data[user_id]
-    state = data["state"]
-
-    hour = now.hour
-    shift_active = (hour >= 19 or hour < 8)
-
-    text = ""
-
-    # ================= START WORK (ONLY SHIFT CHECK) =================
-    if q.data == "start":
-
-        if not shift_active:
-            await q.message.reply_text("❌ Shift not active (7PM–8AM)")
-            return
-
-        data["state"] = "working"
-        data["started"] = True
-
-        text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
-
-    # ================= OFF WORK (ONLY AFTER START) =================
-    elif q.data == "off":
-
-        if not data["started"]:
-            await q.message.reply_text("❌ You must start work first!")
-            return
-
-        data["state"] = "idle"
-        data["started"] = False
-        data["break"] = None
-
-        text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
-
-    # ================= BREAK START =================
-    elif q.data in ["smoke", "wash", "prayer", "lunch"]:
-
-        if state != "working":
-            await q.message.reply_text("❌ Start work first!")
-            return
-
-        if data.get("break"):
-            await q.message.reply_text("❌ Finish current break first!")
-            return
-
-        data["state"] = "break"
-        data["break"] = (q.data, now)
-
-        text = f"🚀 {name} started {q.data} break"
-
-    # ================= BACK TO SEAT =================
+    # ================= BACK =================
     elif q.data == "back":
-
         if state != "break":
             await q.message.reply_text("❌ You are not on break!")
             return
-
-        fines = 0
-        btype, start = data["break"]
 
         limits = {
             "smoke": 10,
             "wash": 10,
             "prayer": 15,
-            "lunch": 180
+            "lunch": 180,
         }
 
-        if (now - start).total_seconds() / 60 > limits[btype]:
-            fines = 1000
+        btype, start_time = data["break"]
+        used = (now - start_time).total_seconds() / 60
+
+        fine = 0
+
+        if used > limits[btype]:
+            fine = 500
 
         data["state"] = "working"
         data["break"] = None
 
-        text = f"🔙 {name} Back to Work"
+        text = f"🔙 {name} back to work"
 
-        if fines:
-            text += f"\n⚠️ Fine: {fines} PKR"
+        if fine:
+            text += f"\n⚠️ Fine Applied: {fine} PKR"
 
-    # ================= BLOCK INVALID ACTIONS =================
-    else:
-        if state == "break":
-            await q.message.reply_text("❌ Finish break first!")
-            return
-        if state == "idle" and q.data not in ["start"]:
-            await q.message.reply_text("❌ Start work first!")
+    # ================= ADMIN REPORT =================
+    elif q.data == "report":
+
+        if not is_admin(int(user_id)):
+            await q.message.reply_text("❌ Admin only")
             return
 
-    if not text:
-        text = "⚠️ Action completed"
+        text = "📊 ADMIN REPORT\n\n"
 
-    await q.message.reply_text(text, reply_markup=menu())
+        for uid, d in user_data.items():
+            text += f"User {uid}: {d}\n"
 
-    # ================= BLOCK INVALID ACTIONS =================
-    else:
-        if state == "break":
-            await q.message.reply_text("❌ Finish break first!")
-            return
-        if state == "idle" and q.data not in ["start"]:
-            await q.message.reply_text("❌ Start work first!")
-            return
+    await q.message.reply_text(text, reply_markup=menu(int(user_id)))
 
-    if not text:
-        text = "⚠️ Action completed"
-
-    await q.message.reply_text(text, reply_markup=menu())
-
-    # ================= SAFE SEND =================
-    if not text:
-        text = "⚠️ Done"
-
-    await q.message.reply_text(text, reply_markup=menu())
 
 # ================= MAIN =================
 def main():
@@ -259,11 +190,26 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
 
-    # FIX: avoid webhook conflict on Railway
+    # prevent webhook conflict
     app.bot.delete_webhook(drop_pending_updates=True)
+
+    # ================= DAILY SCHEDULER =================
+    scheduler = AsyncIOScheduler()
+
+    scheduler.add_job(
+        send_daily_report,
+        "cron",
+        hour=8,
+        minute=0,
+        args=[app],
+    )
+
+    scheduler.start()
 
     print("Bot is running...")
     app.run_polling()
 
+
+# ================= RUN =================
 if __name__ == "__main__":
     main()
