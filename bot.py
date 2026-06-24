@@ -17,7 +17,7 @@ if not TOKEN:
     raise ValueError("BOT_TOKEN is not set!")
 
 # ================= ADMIN =================
-ADMIN_ID = 1234567890  # 🔥 CHANGE THIS
+ADMIN_ID = 8869605526  # 🔥 CHANGE THIS
 
 def is_admin(user_id):
     return user_id == ADMIN_ID
@@ -47,10 +47,12 @@ def menu(user_id):
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👨‍💼 Attendance Bot Active",
-        reply_markup=menu(update.effective_user.id),
-    )
+    await update.message.reply_text("Bot started")
+
+# 👇 ADD THIS HERE
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(f"📌 Group ID: {chat_id}")
 
 # ================= DAILY REPORT =================
 async def send_daily_report(app):
@@ -164,8 +166,8 @@ def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
 
+    app.add_handler(CallbackQueryHandler(button))
     print("Bot running...")
 
     async def post_init(app):
@@ -177,7 +179,7 @@ def main():
 
     app.post_init = post_init
 
-    app.run_polling()
+    app.run_app.add_handler(CommandHandler("id", get_id))
 
 # ================= RUN =================
 if __name__ == "__main__":
