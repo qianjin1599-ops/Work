@@ -68,7 +68,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = user_data[user_id]
 
-    text = "⚠️ Action recorded"
+    text = "⚠️ Action completed"
 
     # ================= SHIFT CHECK =================
     hour = now.hour
