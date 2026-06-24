@@ -83,6 +83,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(q.from_user.id)
     name = q.from_user.first_name
     now = datetime.now()
+    q = update.callback_query
+    await q.answer()
+
+    user_id = str(q.from_user.id)
+    name = q.from_user.first_name
+    now = datetime.now()
 
     if user_id not in user_data:
         user_data[user_id] = {
