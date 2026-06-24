@@ -87,7 +87,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q.data == "start":
 
         if not is_shift_time():
-            await q.message.reply_text("❌ Shift allowed only 7PM - 8AM")
+            await q.bot.send_message(
+    chat_id=q.message.chat_id,
+    text=text,
+    reply_markup=menu(int(uid))
+)"❌ Shift allowed only 7PM - 8AM")
             return
 
         # 🚨 LATE DETECTION
@@ -166,7 +170,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for u, d in user_data.items():
             text += f"{u}: {d}\n"
 
-    await q.message.reply_text(text, reply_markup=menu(int(uid)))
+   await q.bot.send_message(
+    chat_id=q.message.chat_id,
+    text=text,
+    reply_markup=menu(int(uid))
+)
 
 # ================= MAIN =================
 def main():
