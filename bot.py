@@ -8,7 +8,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 logging.basicConfig(level=logging.INFO)
 
 # 🔥 USE ENV VARIABLE (IMPORTANT FOR RENDER/RAILWAY)
-TOKEN = os.getenv("8968085641:AAGkQ2pfG5fa-Tz9LiqOLRGctE0jW3lso-M")
+import os
+TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN is not set!")
