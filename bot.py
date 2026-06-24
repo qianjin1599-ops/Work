@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import logging
 from datetime import datetime, timedelta
 
@@ -10,111 +11,144 @@ logging.basicConfig(level=logging.INFO)
 
 # ================= TOKEN =================
 TOKEN = os.getenv("BOT_TOKEN")
-
 if not TOKEN:
     raise ValueError("BOT_TOKEN is not set!")
+
+# ================= DATABASE =================
+conn = sqlite3.connect("attendance.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    name TEXT,
+    action TEXT,
+    start_time TEXT,
+    end_time TEXT,
+    fine INTEGER,
+    date TEXT
+)
+""")
+conn.commit()
 
 # ================= MEMORY =================
 user_data = {}
 
+SHIFT_START = 19   # 7 PM
+SHIFT_END = 8      # 8 AM
+
 # ================= MENU =================
-def get_menu():
+def menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🟢 Start Work", callback_data="start")],
-        [InlineKeyboardButton("🚬 Smoke Break", callback_data="smoke")],
+        [InlineKeyboardButton("🚬 Smoke", callback_data="smoke")],
         [InlineKeyboardButton("🚻 Washroom", callback_data="wash")],
-        [InlineKeyboardButton("🕌 Prayer Break", callback_data="prayer")],
-        [InlineKeyboardButton("🍽 Lunch Break", callback_data="lunch")],
-        [InlineKeyboardButton("🔙 Back to Seat", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off Work", callback_data="off")],
-        [InlineKeyboardButton("🏠 Menu", callback_data="menu")]
+        [InlineKeyboardButton("🕌 Prayer", callback_data="prayer")],
+        [InlineKeyboardButton("🍽 Lunch", callback_data="lunch")],
+        [InlineKeyboardButton("🔙 Back", callback_data="back")],
+        [InlineKeyboardButton("🔴 Off", callback_data="off")]
     ])
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👨‍💼 Attendance Bot Ready",
-        reply_markup=get_menu()
+        "👨‍💼 Attendance Bot Active",
+        reply_markup=menu()
     )
 
 # ================= BUTTON HANDLER =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    q = update.callback_query
+    await q.answer()
 
-    user = query.from_user.first_name
-    user_id = query.from_user.id
+    user_id = str(q.from_user.id)
+    name = q.from_user.first_name
     now = datetime.now()
 
     if user_id not in user_data:
-        user_data[user_id] = {}
+        user_data[user_id] = {
+            "state": "idle",
+            "break": None
+        }
 
     data = user_data[user_id]
+    state = data["state"]
+
+    hour = now.hour
+    shift_active = (hour >= SHIFT_START or hour < SHIFT_END)
 
     text = "⚠️ Action recorded"
 
-    try:
+    # ================= SHIFT CHECK =================
+    if q.data == "start" and not shift_active:
+        await q.message.reply_text("❌ Shift not active (7PM–8AM)")
+        return
 
-        # ================= START =================
-        if query.data == "start":
-            data["start"] = now
-            text = f"🟢 {user} Started Work\n⏰ {now.strftime('%H:%M')}"
+    # ================= START WORK =================
+    if q.data == "start":
+        data["state"] = "working"
+        text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
 
-        # ================= BREAKS =================
-        elif query.data == "smoke":
-            data["smoke"] = now
-            data["smoke_limit"] = now + timedelta(minutes=10)
-            text = f"🚬 {user} Smoke Break Started"
+    # ================= BREAK START =================
+    elif q.data in ["smoke", "wash", "prayer", "lunch"]:
+        if state != "working":
+            await q.message.reply_text("❌ Start work first!")
+            return
 
-        elif query.data == "wash":
-            data["wash"] = now
-            data["wash_limit"] = now + timedelta(minutes=10)
-            text = f"🚻 {user} Washroom Started"
+        data["state"] = "break"
+        data["break"] = (q.data, now)
 
-        elif query.data == "prayer":
-            data["prayer"] = now
-            data["prayer_limit"] = now + timedelta(minutes=15)
-            text = f"🕌 {user} Prayer Started"
+        text = f"🚀 {name} started {q.data} break"
 
-        elif query.data == "lunch":
-            data["lunch"] = now
-            data["lunch_limit"] = now + timedelta(hours=3)
-            text = f"🍽 {user} Lunch Started"
+    # ================= BACK =================
+    elif q.data == "back":
+        fines = 0
 
-        # ================= BACK =================
-        elif query.data == "back":
-            fines = 0
+        if data.get("break"):
+            btype, start = data["break"]
 
-            if "smoke_limit" in data and now > data["smoke_limit"]:
+            limits = {
+                "smoke": 10,
+                "wash": 10,
+                "prayer": 15,
+                "lunch": 180
+            }
+
+            limit = limits[btype]
+
+            if (now - start).total_seconds() / 60 > limit:
                 fines += 1000
-            if "wash_limit" in data and now > data["wash_limit"]:
-                fines += 1000
-            if "prayer_limit" in data and now > data["prayer_limit"]:
-                fines += 1000
-            if "lunch_limit" in data and now > data["lunch_limit"]:
-                fines += 1000
 
-            text = f"🔙 {user} Back to Seat"
+            data["break"] = None
 
-            if fines > 0:
-                text += f"\n⚠️ Fine: {fines} PKR"
+        data["state"] = "working"
 
-        # ================= OFF =================
-        elif query.data == "off":
-            text = f"🔴 {user} Ended Work\n⏰ {now.strftime('%H:%M')}"
+        text = f"🔙 {name} Back to Seat"
 
-        # ================= MENU =================
-        elif query.data == "menu":
-            text = "👨‍💼 Main Menu"
+        if fines:
+            text += f"\n⚠️ Fine Applied: {fines} PKR"
 
-        # ================= SAFETY =================
-        if not text or text.strip() == "":
-            text = "⚠️ Action completed"
+    # ================= OFF =================
+    elif q.data == "off":
+        data["state"] = "idle"
+        data["break"] = None
+        text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
+        # ================= INVALID ACTION LOCK =================
+    else:
+        if state == "break":
+            await q.message.reply_text("❌ You must finish break first!")
+            return
+        if state == "idle":
+            await q.message.reply_text("❌ You must start work first!")
+            return
 
-        await query.message.reply_text(text, reply_markup=get_menu())
+    # ================= SAFE SEND =================
+    if not text:
+        text = "⚠️ Done"
 
-    except Exception as e:
-        await query.message.reply_text(f"❌ Error: {str(e)}", reply_markup=get_menu())
+    await q.message.reply_text(text, reply_markup=menu())
+
 # ================= MAIN =================
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -122,7 +156,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
 
-    # FIX FOR RAILWAY + CONFLICT ERROR
+    # FIX: avoid webhook conflict on Railway
     app.bot.delete_webhook(drop_pending_updates=True)
 
     print("Bot is running...")
