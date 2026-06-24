@@ -96,8 +96,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔴 Off", callback_data="off")]
     ]
 
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
+    await context.bot.send_message(
+    chat_id=update.effective_chat.id,
+    text=text
+)
 
 def main():
     app = Application.builder().token(TOKEN).build()
