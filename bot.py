@@ -119,7 +119,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= MAIN =================
 def main():
-    app = Application.builder().token(TOKEN).build()app.add_handler(CommandHandler("start", start))
+   app = Application.builder().token(TOKEN).build()
+
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(button))
+
+print("Bot is running...")
+app.run_polling()
     app.add_handler(CallbackQueryHandler(button))
 
     print("🤖 Bot is running...")
