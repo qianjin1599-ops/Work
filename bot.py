@@ -10,26 +10,24 @@ logging.basicConfig(level=logging.INFO)
 
 # ================= TOKEN =================
 TOKEN = os.getenv("BOT_TOKEN")
-
 if not TOKEN:
     raise ValueError("BOT_TOKEN is not set!")
 
-# ================= ADMIN =================
-ADMIN_ID = 8869605526  # CHANGE THIS
-
-def is_admin(uid):
-    return uid == ADMIN_ID
+# ================= CONFIG =================
+ADMIN_ID = 8869605526
+GROUP_ID = None  # optional
 
 # ================= MEMORY =================
 user_data = {}
 
-# ================= SHIFT CONFIG =================
-SHIFT_START_HOUR = 19  # 7 PM
-SHIFT_END_HOUR = 8      # 8 AM
+# ================= SHIFT =================
+def in_shift():
+    now = datetime.now()
+    return now.hour >= 19 or now.hour < 8
 
 # ================= MENU =================
-def menu(user_id):
-    buttons = [
+def menu():
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("🟢 Start Work", callback_data="start")],
         [InlineKeyboardButton("🚬 Smoke", callback_data="smoke")],
         [InlineKeyboardButton("🚻 Washroom", callback_data="wash")],
@@ -37,31 +35,25 @@ def menu(user_id):
         [InlineKeyboardButton("🍽 Lunch", callback_data="lunch")],
         [InlineKeyboardButton("🔙 Back", callback_data="back")],
         [InlineKeyboardButton("🔴 Off Work", callback_data="off")],
-    ]
-
-    if is_admin(user_id):
-        buttons.append([InlineKeyboardButton("📊 Report", callback_data="report")])
-
-    return InlineKeyboardMarkup(buttons)
-
-# ================= SHIFT CHECK =================
-def is_shift_time():
-    hour = datetime.now().hour
-    return hour >= SHIFT_START_HOUR or hour < SHIFT_END_HOUR
+    ])
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👨‍💼 HR Attendance Bot Active",
-        reply_markup=menu(update.effective_user.id)
-    )
+    await update.message.reply_text("👨‍💼 Bot Active", reply_markup=menu())
 
 # ================= GET CHAT ID =================
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    await update.message.reply_text(f"📌 Chat ID:\n{chat_id}")
+    await update.message.reply_text(f"📌 Chat ID: {update.effective_chat.id}")
 
-# ================= BUTTON HANDLER =================
+# ================= SAFE SEND =================
+async def safe_send(q, text):
+    await q.bot.send_message(
+        chat_id=q.message.chat_id,
+        text=text,
+        reply_markup=menu()
+    )
+
+# ================= HANDLER =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -74,8 +66,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data[uid] = {
             "state": "idle",
             "break": None,
-            "start_time": None,
-            "late_fine": 0
+            "start": None,
+            "late": False
         }
 
     data = user_data[uid]
@@ -83,59 +75,56 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = ""
 
-    # ================= START WORK =================
+    # ================= START =================
     if q.data == "start":
 
-        if not is_shift_time():
-            await q.bot.send_message(
-    chat_id=q.message.chat_id,
-    text=text,
-    reply_markup=menu(int(uid))
-)"❌ Shift allowed only 7PM - 8AM")
+        if not in_shift():
+            await safe_send(q, "❌ Shift is 7PM - 8AM only")
             return
 
-        # 🚨 LATE DETECTION
-        if now.hour > SHIFT_START_HOUR or (now.hour == SHIFT_START_HOUR and now.minute > 0):
-            data["late_fine"] = 1000
+        if now.hour > 19:
+            data["late"] = True
         else:
-            data["late_fine"] = 0
+            data["late"] = False
 
         data["state"] = "working"
-        data["start_time"] = now
+        data["start"] = now
 
         text = f"🟢 {name} started work"
 
-        if data["late_fine"]:
-            text += f"\n⚠️ Late Fine: ₹1000"
+        if data["late"]:
+            text += "\n⚠️ Late Fine: ₹1000"
 
-    # ================= OFF WORK =================
+    # ================= OFF =================
     elif q.data == "off":
         data["state"] = "idle"
         data["break"] = None
         text = f"🔴 {name} ended work"
 
-    # ================= BREAK START =================
+    # ================= BREAK =================
     elif q.data in ["smoke", "wash", "prayer", "lunch"]:
 
         if state != "working":
-            await q.message.reply_text("❌ Start work first!")
+            await safe_send(q, "❌ Start work first")
             return
 
         if data["break"]:
-            await q.message.reply_text("❌ Already on break!")
+            await safe_send(q, "❌ Already on break")
             return
 
         data["break"] = (q.data, now)
         data["state"] = "break"
 
-        text = f"🚀 {name} started {q.data} break"
+        text = f"🚀 {name} started {q.data}"
 
     # ================= BACK =================
     elif q.data == "back":
 
         if state != "break":
-            await q.message.reply_text("❌ Not on break!")
-            limits = {
+            await safe_send(q, "❌ Not on break")
+            return
+
+        limits = {
             "smoke": 10,
             "wash": 10,
             "prayer": 15,
@@ -143,38 +132,31 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         btype, start_time = data["break"]
-        minutes = (now - start_time).total_seconds() / 60
+        mins = (now - start_time).total_seconds() / 60
 
         fine = 0
-
-        if minutes > limits[btype]:
+        if mins > limits[btype]:
             fine = 500
 
         data["break"] = None
         data["state"] = "working"
 
-        text = f"🔙 {name} back to work"
+        text = f"🔙 {name} back"
 
         if fine:
-            text += f"\n⚠️ Break Fine: ₹500"
-
-    # ================= REPORT =================
+            text += "\n⚠️ Break Fine: ₹500"
+            # ================= REPORT =================
     elif q.data == "report":
 
-        if not is_admin(int(uid)):
-            await q.message.reply_text("❌ Admin only")
+        if int(uid) != ADMIN_ID:
+            await safe_send(q, "❌ Admin only")
             return
 
-        text = "📊 HR REPORT\n\n"
-
+        text = "📊 REPORT\n\n"
         for u, d in user_data.items():
             text += f"{u}: {d}\n"
 
-   await q.bot.send_message(
-    chat_id=q.message.chat_id,
-    text=text,
-    reply_markup=menu(int(uid))
-)
+    await safe_send(q, text)
 
 # ================= MAIN =================
 def main():
@@ -185,7 +167,6 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
 
     print("Bot running...")
-
     app.run_polling()
 
 # ================= RUN =================
