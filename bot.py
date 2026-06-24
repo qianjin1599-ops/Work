@@ -14,24 +14,24 @@ if not TOKEN:
 
 user_data = {}
 
-# ================= START =================
+# START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🟢 Start Work", callback_data="start_work")],
-        [InlineKeyboardButton("🍔 Lunch Break", callback_data="lunch")],
+        [InlineKeyboardButton("🍔 Lunch", callback_data="lunch")],
         [InlineKeyboardButton("🚽 Washroom", callback_data="washroom")],
         [InlineKeyboardButton("☕️ Smoke", callback_data="smoke")],
         [InlineKeyboardButton("🙏 Prayer", callback_data="prayer")],
-        [InlineKeyboardButton("💺 Back to Seat", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off Work", callback_data="off")]
+        [InlineKeyboardButton("💺 Back", callback_data="back")],
+        [InlineKeyboardButton("🔴 Off", callback_data="off")]
     ]
 
     await update.message.reply_text(
-        "👨‍💼 Attendance Bot Active",
+        "👨‍💼 Bot Started",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ================= BUTTON HANDLER =================
+# BUTTONS
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -48,7 +48,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "start_work":
         data["start"] = now
-        text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
+        text = f"🟢 {name} Started Work"
 
     elif query.data == "lunch":
         data["lunch_limit"] = now + timedelta(hours=3)
@@ -99,7 +99,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-# ================= MAIN =================
 def main():
     app = Application.builder().token(TOKEN).build()
 
