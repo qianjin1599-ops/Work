@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -10,14 +10,11 @@ logging.basicConfig(level=logging.INFO)
 
 # ================= TOKEN =================
 TOKEN = os.getenv("BOT_TOKEN")
+
 if not TOKEN:
-    raise ValueError("BOT_TOKEN is not set!")
+    raise ValueError("BOT_TOKEN not set")
 
-# ================= CONFIG =================
-ADMIN_ID = 8869605526
-GROUP_ID = None  # optional
-
-# ================= MEMORY =================
+# ================= DATA =================
 user_data = {}
 
 # ================= SHIFT =================
@@ -34,28 +31,22 @@ def menu():
         [InlineKeyboardButton("🕌 Prayer", callback_data="prayer")],
         [InlineKeyboardButton("🍽 Lunch", callback_data="lunch")],
         [InlineKeyboardButton("🔙 Back", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off Work", callback_data="off")],
+        [InlineKeyboardButton("🔴 Off Work", callback_data="off")]
     ])
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👨‍💼 Bot Active", reply_markup=menu())
+    await update.message.reply_text("👨‍💼 Attendance Bot Ready", reply_markup=menu())
 
-# ================= GET CHAT ID =================
+# ================= CHAT ID =================
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"📌 Chat ID: {update.effective_chat.id}")
+    await update.message.reply_text(f"Chat ID: {update.effective_chat.id}")
 
-# ================= SAFE SEND =================
-async def safe_send(q, text):
-    await q.bot.send_message(
-        chat_id=q.message.chat_id,
-        text=text,
-        reply_markup=menu()
-    )
-
-# ================= HANDLER =================
+# ================= BUTTON HANDLER =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+
+    # ⚠️ MUST BE FIRST LINE ALWAYS
     await q.answer()
 
     uid = str(q.from_user.id)
@@ -75,25 +66,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = ""
 
-    # ================= START =================
+    # ================= START WORK =================
     if q.data == "start":
 
         if not in_shift():
-            await safe_send(q, "❌ Shift is 7PM - 8AM only")
-            return
-
-        if now.hour > 19:
-            data["late"] = True
+            text = "❌ Shift is 7PM - 8AM only"
         else:
-            data["late"] = False
+            data["start"] = now
+            data["state"] = "working"
 
-        data["state"] = "working"
-        data["start"] = now
+            data["late"] = now.hour > 19
 
-        text = f"🟢 {name} started work"
+            text = f"🟢 {name} started work"
 
-        if data["late"]:
-            text += "\n⚠️ Late Fine: ₹1000"
+            if data["late"]:
+                text += "\n⚠️ Late Fine: ₹1000"
 
     # ================= OFF =================
     elif q.data == "off":
@@ -101,67 +88,56 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["break"] = None
         text = f"🔴 {name} ended work"
 
-    # ================= BREAK =================
+    # ================= BREAK START =================
     elif q.data in ["smoke", "wash", "prayer", "lunch"]:
 
         if state != "working":
-            await safe_send(q, "❌ Start work first")
-            return
-
-        if data["break"]:
-            await safe_send(q, "❌ Already on break")
-            return
-
-        data["break"] = (q.data, now)
-        data["state"] = "break"
-
-        text = f"🚀 {name} started {q.data}"
+            text = "❌ Start work first"
+        elif data["break"]:
+            text = "❌ Already on break"
+        else:
+            data["break"] = (q.data, now)
+            data["state"] = "break"
+            text = f"🚀 {name} started {q.data}"
 
     # ================= BACK =================
     elif q.data == "back":
 
         if state != "break":
-            await safe_send(q, "❌ Not on break")
-            return
+            text = "❌ Not on break"
+        else:
+            limits = {
+                "smoke": 10,
+                "wash": 10,
+                "prayer": 15,
+                "lunch": 180
+            }
 
-        limits = {
-            "smoke": 10,
-            "wash": 10,
-            "prayer": 15,
-            "lunch": 180
-        }
+            btype, start = data["break"]
+            mins = (now - start).total_seconds() / 60
 
-        btype, start_time = data["break"]
-        mins = (now - start_time).total_seconds() / 60
+            fine = 0
+            if mins > limits[btype]:
+                fine = 500
 
-        fine = 0
-        if mins > limits[btype]:
-            fine = 500
+            data["break"] = None
+            data["state"] = "working"
 
-        data["break"] = None
-        data["state"] = "working"
+            text = f"🔙 {name} back to work"
 
-        text = f"🔙 {name} back"
+            if fine:
+                text += "\n⚠️ Fine: ₹500"
 
-        if fine:
-            text += "\n⚠️ Break Fine: ₹500"
-            # ================= REPORT =================
-    elif q.data == "report":
-
-        if int(uid) != ADMIN_ID:
-            await safe_send(q, "❌ Admin only")
-            return
-
-        text = "📊 REPORT\n\n"
-        for u, d in user_data.items():
-            text += f"{u}: {d}\n"
-
-    await safe_send(q, text)
+    # ================= SEND MESSAGE SAFELY =================
+    await q.bot.send_message(
+        chat_id=q.message.chat_id,
+        text=text,
+        reply_markup=menu()
+    )
 
 # ================= MAIN =================
 def main():
     app = Application.builder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id", get_id))
     app.add_handler(CallbackQueryHandler(button))
