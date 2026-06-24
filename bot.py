@@ -69,8 +69,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_data:
         user_data[user_id] = {
             "state": "idle",
-            "break": None,
-            "started": False
+            "started": False,
+            "break": None
         }
 
     data = user_data[user_id]
@@ -81,15 +81,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = ""
 
-    # ================= START WORK =================
+    # ================= START WORK (ONLY SHIFT CHECK) =================
     if q.data == "start":
 
         if not shift_active:
             await q.message.reply_text("❌ Shift not active (7PM–8AM)")
-            return
-
-        if state == "working":
-            await q.message.reply_text("❌ Already working")
             return
 
         data["state"] = "working"
@@ -97,15 +93,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
 
-    # ================= OFF WORK (LOCKED UNTIL STARTED) =================
+    # ================= OFF WORK (ONLY AFTER START) =================
     elif q.data == "off":
 
         if not data["started"]:
             await q.message.reply_text("❌ You must start work first!")
-            return
-
-        if state == "break":
-            await q.message.reply_text("❌ Finish break first!")
             return
 
         data["state"] = "idle"
@@ -114,11 +106,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
 
-    # ================= BREAKS =================
+    # ================= BREAK START =================
     elif q.data in ["smoke", "wash", "prayer", "lunch"]:
 
         if state != "working":
             await q.message.reply_text("❌ Start work first!")
+            return
+
+        if data.get("break"):
+            await q.message.reply_text("❌ Finish current break first!")
             return
 
         data["state"] = "break"
@@ -149,24 +145,22 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["state"] = "working"
         data["break"] = None
 
-        text = f"🔙 {name} Back to Seat"
+        text = f"🔙 {name} Back to Work"
 
         if fines:
             text += f"\n⚠️ Fine: {fines} PKR"
 
     # ================= BLOCK INVALID ACTIONS =================
     else:
-
-        if state == "idle":
-            await q.message.reply_text("❌ Start work first!")
-            return
-
         if state == "break":
             await q.message.reply_text("❌ Finish break first!")
             return
+        if state == "idle" and q.data not in ["start"]:
+            await q.message.reply_text("❌ Start work first!")
+            return
 
     if not text:
-        text = "⚠️ Done"
+        text = "⚠️ Action completed"
 
     await q.message.reply_text(text, reply_markup=menu())
 
