@@ -5,19 +5,16 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# ================= LOGGING =================
 logging.basicConfig(level=logging.INFO)
 
-# ================= TOKEN (RAILWAY SAFE) =================
 TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN is not set!")
 
-# ================= MEMORY STORE =================
 user_data = {}
 
-# ================= START COMMAND =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🟢 Start Work", callback_data="start_work")],
@@ -30,7 +27,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await update.message.reply_text(
-        "👨‍💼 Attendance Bot Active\nSelect your action:",
+        "👨‍💼 Attendance Bot Active",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -49,30 +46,28 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = user_data[user_id]
     text = ""
 
-    # ================= ACTIONS =================
     if query.data == "start_work":
         data["start"] = now
         text = f"🟢 {name} Started Work\n⏰ {now.strftime('%H:%M')}"
 
     elif query.data == "lunch":
         data["lunch_limit"] = now + timedelta(hours=3)
-        text = f"🍔 {name} Lunch Started (3 hours limit)"
+        text = f"🍔 {name} Lunch Started"
 
     elif query.data == "washroom":
         data["wash_limit"] = now + timedelta(minutes=10)
-        text = f"🚽 {name} Washroom Started (10 min limit)"
+        text = f"🚽 {name} Washroom Started"
 
     elif query.data == "smoke":
         data["smoke_limit"] = now + timedelta(minutes=10)
-        text = f"☕️ {name} Smoke Break Started (10 min limit)"
+        text = f"☕️ {name} Smoke Started"
 
     elif query.data == "prayer":
         data["prayer_limit"] = now + timedelta(minutes=15)
-        text = f"🙏 {name} Prayer Started (15 min limit)"
+        text = f"🙏 {name} Prayer Started"
 
     elif query.data == "off":
-        data["end"] = now
-        text = f"🔴 {name} Ended Work\n⏰ {now.strftime('%H:%M')}"
+        text = f"🔴 {name} Ended Work"
 
     elif query.data == "back":
         fines = 0
@@ -89,32 +84,23 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = f"💺 {name} Back to Seat"
 
         if fines > 0:
-            text += f"\n⚠️ Fine Applied: {fines} PKR"
+            text += f"\n⚠️ Fine: {fines} PKR"
 
-    # ================= KEYBOARD =================
     keyboard = [
         [InlineKeyboardButton("🟢 Start Work", callback_data="start_work")],
-        [InlineKeyboardButton("🍔 Lunch Break", callback_data="lunch")],
+        [InlineKeyboardButton("🍔 Lunch", callback_data="lunch")],
         [InlineKeyboardButton("🚽 Washroom", callback_data="washroom")],
         [InlineKeyboardButton("☕️ Smoke", callback_data="smoke")],
         [InlineKeyboardButton("🙏 Prayer", callback_data="prayer")],
-        [InlineKeyboardButton("💺 Back to Seat", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off Work", callback_data="off")]
+        [InlineKeyboardButton("💺 Back", callback_data="back")],
+        [InlineKeyboardButton("🔴 Off", callback_data="off")]
     ]
 
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ================= MAIN FUNCTION =================
+
+# ================= MAIN =================
 def main():
-    app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-print("Bot is running...")
-    def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -124,9 +110,5 @@ print("Bot is running...")
     app.run_polling()
 
 
-if name == "main":
-    main()
-
-# ================= ENTRY POINT =================
 if name == "main":
     main()
