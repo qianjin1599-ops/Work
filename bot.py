@@ -7,9 +7,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
-    ContextTypes,
-    MessageHandler,
-    filters
+    ContextTypes
 )
 
 # ================= LOGGING =================
@@ -27,20 +25,30 @@ if not TOKEN:
 # ================= MEMORY =================
 user_data = {}
 
-# ================= SHIFT =================
-SHIFT_START = 19
-SHIFT_END = 8
+# ================= SHIFT CONFIG =================
+SHIFT_START = 19   # 7 PM
+SHIFT_END = 8      # 8 AM (overnight shift)
+
+# ================= BREAK LIMITS =================
+LIMITS = {
+    "smoke": 10,
+    "washroom": 10,
+    "prayer": 15,
+    "lunch": 180
+}
+
+FINE_AMOUNT = 1000
 
 # ================= MENU =================
 def get_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🟢 Start Work", callback_data="start")],
         [InlineKeyboardButton("🚬 Smoke Break", callback_data="smoke")],
-        [InlineKeyboardButton("🚻 Washroom", callback_data="washroom")],
+        [InlineKeyboardButton("🚻 Washroom Break", callback_data="washroom")],
         [InlineKeyboardButton("🕌 Prayer Break", callback_data="prayer")],
         [InlineKeyboardButton("🍽 Lunch Break", callback_data="lunch")],
         [InlineKeyboardButton("🔙 Back to Seat", callback_data="back")],
-        [InlineKeyboardButton("🔴 Off Work", callback_data="off")]
+        [InlineKeyboardButton("🔴 Off Work", callback_data="off")],
     ])
 
 # ================= SHIFT CHECK =================
@@ -48,14 +56,14 @@ def is_shift_active():
     hour = datetime.now().hour
     return hour >= SHIFT_START or hour < SHIFT_END
 
-# ================= START =================
+# ================= START COMMAND =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👨‍💼 Attendance Bot Started",
+        "👨‍💼 Attendance Bot Activated",
         reply_markup=get_menu()
     )
 
-# ================= CALLBACK =================
+# ================= CALLBACK HANDLER =================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -66,10 +74,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id not in user_data:
         user_data[user_id] = {
-            "state": "idle",
+            "state": "idle",     # idle, working, break
             "break": None,
-            "start": None,
-            "fine": 0
+            "start": None
         }
 
     data = user_data[user_id]
@@ -78,72 +85,69 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ================= START WORK =================
     if query.data == "start":
+
         if not is_shift_active():
-            text = "❌ Shift time is 7PM - 8AM only"
+            text = "❌ Shift allowed only between 7PM - 8AM"
         else:
             data["state"] = "working"
             data["start"] = now
             text = f"🟢 {name} started work"
 
-    # ================= OFF =================
+    # ================= OFF WORK =================
     elif query.data == "off":
         data["state"] = "idle"
         data["break"] = None
         text = f"🔴 {name} ended work"
 
-    # ================= BREAK =================
-    elif query.data in ["smoke", "washroom", "prayer", "lunch"]:
+    # ================= START BREAK =================
+    elif query.data in LIMITS:
 
         if state != "working":
-            text = "❌ Start work first"
+            text = "❌ You must start work first"
         elif data["break"]:
-            text = "❌ Already on break"
+            text = "❌ Already on a break"
         else:
             data["break"] = (query.data, now)
             data["state"] = "break"
             text = f"🚀 {name} started {query.data} break"
 
-    # ================= BACK =================
+    # ================= BACK TO SEAT =================
     elif query.data == "back":
 
         if state != "break":
-            text = "❌ Not on break"
+            text = "❌ You are not on a break"
         else:
-            limits = {
-                "smoke": 10,
-                "washroom": 10,
-                "prayer": 15,
-                "lunch": 180
-            }
-
             break_type, start_time = data["break"]
+
             minutes = (now - start_time).total_seconds() / 60
 
             fine = 0
-            if minutes > limits[break_type]:
-                fine = 1000
+            limit = LIMITS.get(break_type, 0)
+
+            if minutes > limit:
+                fine = FINE_AMOUNT
 
             data["break"] = None
             data["state"] = "working"
 
-            text = f"🔙 Back to seat"
+            text = f"🔙 {name} back to seat"
 
             if fine:
-                text += f"\n⚠️ Fine: ₹{fine}"
+                text += f"\n⚠️ Fine Applied: ₹{fine}"
 
-    # ================= SEND =================
+    # ================= SEND RESPONSE =================
     await query.message.reply_text(
         text,
         reply_markup=get_menu()
     )
-
-# ================= MAIN =================
+    # ================= MAIN =================
 def main():
     app = Application.builder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot is running...")
+    print("🚀 Bot is running...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
