@@ -1,3 +1,4 @@
+import traceback
 import os
 import logging
 from datetime import datetime
@@ -142,13 +143,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     # ================= MAIN =================
 def main():
-    app = Application.builder().token(TOKEN).build()
+    try:
+        app = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🚀 Bot is running...")
-    app.run_polling(drop_pending_updates=True)
+        print("🚀 Bot is running...")
+        app.run_polling(drop_pending_updates=True)
 
-if __name__ == "__main__":
-    main()
+    except Exception as e:
+        print("❌ ERROR OCCURRED:")
+        traceback.print_exc()
