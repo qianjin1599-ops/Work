@@ -6,145 +6,159 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # ================= LOGGING =================
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
 # ================= TOKEN =================
 TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
-    raise ValueError("BOT_TOKEN not set")
+    raise RuntimeError("BOT_TOKEN is missing in environment variables")
 
-# ================= DATA =================
+# ================= MEMORY STORAGE =================
 user_data = {}
 
-# ================= SHIFT =================
-def in_shift():
-    now = datetime.now()
-    return now.hour >= 19 or now.hour < 8
+# ================= SHIFT CONFIG =================
+SHIFT_START = 19  # 7 PM
+SHIFT_END = 8     # 8 AM
 
 # ================= MENU =================
-def menu():
+def get_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🟢 Start Work", callback_data="start")],
-        [InlineKeyboardButton("🚬 Smoke", callback_data="smoke")],
-        [InlineKeyboardButton("🚻 Washroom", callback_data="wash")],
-        [InlineKeyboardButton("🕌 Prayer", callback_data="prayer")],
-        [InlineKeyboardButton("🍽 Lunch", callback_data="lunch")],
-        [InlineKeyboardButton("🔙 Back", callback_data="back")],
+        [InlineKeyboardButton("🚬 Smoke Break", callback_data="smoke")],
+        [InlineKeyboardButton("🚻 Washroom", callback_data="washroom")],
+        [InlineKeyboardButton("🕌 Prayer Break", callback_data="prayer")],
+        [InlineKeyboardButton("🍽 Lunch Break", callback_data="lunch")],
+        [InlineKeyboardButton("🔙 Back to Seat", callback_data="back")],
         [InlineKeyboardButton("🔴 Off Work", callback_data="off")]
     ])
 
-# ================= START =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👨‍💼 Attendance Bot Ready", reply_markup=menu())
+# ================= SHIFT CHECK =================
+def is_shift_active():
+    hour = datetime.now().hour
+    return hour >= SHIFT_START or hour < SHIFT_END
 
-# ================= CHAT ID =================
+# ================= START COMMAND =================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👨‍💼 Attendance Bot Started",
+        reply_markup=get_menu()
+    )
+
+# ================= GET CHAT ID =================
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Chat ID: {update.effective_chat.id}")
 
 # ================= BUTTON HANDLER =================
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
 
-    # ⚠️ MUST BE FIRST LINE ALWAYS
-    await q.answer()
+    # ALWAYS FIRST (prevents Telegram timeout error)
+    await query.answer()
 
-    uid = str(q.from_user.id)
-    name = q.from_user.first_name
+    user_id = str(query.from_user.id)
+    name = query.from_user.first_name
     now = datetime.now()
 
-    if uid not in user_data:
-        user_data[uid] = {
+    if user_id not in user_data:
+        user_data[user_id] = {
             "state": "idle",
             "break": None,
             "start": None,
-            "late": False
+            "late_fine": 0
         }
 
-    data = user_data[uid]
+    data = user_data[user_id]
     state = data["state"]
 
     text = ""
 
     # ================= START WORK =================
-    if q.data == "start":
+    if query.data == "start":
 
-        if not in_shift():
-            text = "❌ Shift is 7PM - 8AM only"
+        if not is_shift_active():
+            text = "❌ Shift time is 7PM - 8AM only"
         else:
-            data["start"] = now
             data["state"] = "working"
+            data["start"] = now
 
-            data["late"] = now.hour > 19
+            if now.hour > SHIFT_START:
+                data["late_fine"] = 1000
+            else:
+                data["late_fine"] = 0
 
             text = f"🟢 {name} started work"
 
-            if data["late"]:
+            if data["late_fine"]:
                 text += "\n⚠️ Late Fine: ₹1000"
 
-    # ================= OFF =================
-    elif q.data == "off":
+    # ================= OFF WORK =================
+    elif query.data == "off":
         data["state"] = "idle"
         data["break"] = None
         text = f"🔴 {name} ended work"
 
-    # ================= BREAK START =================
-    elif q.data in ["smoke", "wash", "prayer", "lunch"]:
+    # ================= START BREAK =================
+    elif query.data in ["smoke", "washroom", "prayer", "lunch"]:
 
         if state != "working":
-            text = "❌ Start work first"
+            text = "❌ You must start work first"
         elif data["break"]:
-            text = "❌ Already on break"
+            text = "❌ You are already on a break"
         else:
-            data["break"] = (q.data, now)
+            data["break"] = (query.data, now)
             data["state"] = "break"
-            text = f"🚀 {name} started {q.data}"
+            text = f"🚀 {name} started {query.data} break"
 
-    # ================= BACK =================
-    elif q.data == "back":
+    # ================= BACK TO SEAT =================
+    elif query.data == "back":
 
         if state != "break":
-            text = "❌ Not on break"
+            text = "❌ You are not on a break"
         else:
             limits = {
                 "smoke": 10,
-                "wash": 10,
+                "washroom": 10,
                 "prayer": 15,
                 "lunch": 180
             }
 
-            btype, start = data["break"]
-            mins = (now - start).total_seconds() / 60
-
+            break_type, start_time = data["break"]
+            minutes = (now - start_time).total_seconds() / 60
             fine = 0
-            if mins > limits[btype]:
+            if minutes > limits[break_type]:
                 fine = 500
 
             data["break"] = None
             data["state"] = "working"
 
-            text = f"🔙 {name} back to work"
+            text = f"🔙 {name} back to seat"
 
             if fine:
-                text += "\n⚠️ Fine: ₹500"
+                text += "\n⚠️ Break exceeded limit fine: ₹500"
 
-    # ================= SEND MESSAGE SAFELY =================
-    await q.bot.send_message(
-        chat_id=q.message.chat_id,
+    # ================= SEND MESSAGE (SAFE) =================
+    await query.bot.send_message(
+        chat_id=query.message.chat_id,
         text=text,
-        reply_markup=menu()
+        reply_markup=get_menu()
     )
 
 # ================= MAIN =================
 def main():
     app = Application.builder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id", get_id))
-    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot running...")
-    app.run_polling()
+    print("BOT RUNNING...")
 
-# ================= RUN =================
+    app.run_polling(drop_pending_updates=True)
+
+# ================= START =================
 if __name__ == "__main__":
     main()
